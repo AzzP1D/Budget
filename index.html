@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<!-- viewport-fit=cover — занимать весь экран, включая «чёлку» iPhone -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Мой бюджет</title>
+
+<!-- PWA: манифест и иконки, чтобы приложение можно было поставить на телефон -->
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#2563eb">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Бюджет">
+
+<style>
+  /* ---------- ВНЕШНИЙ ВИД (сначала для телефона) ---------- */
+  :root { --bg:#f6f7f9; --card:#fff; --text:#1d2330; --muted:#6b7280; --line:#e5e7eb;
+          --accent:#2563eb; --accent-soft:#eef4ff; --good:#16a34a; --bad:#dc2626;
+          --nav-h:64px; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin:0; font-family: system-ui, -apple-system, sans-serif; background:var(--bg); color:var(--text); }
+
+  /* Содержимое — одна колонка; снизу отступ под панель навигации */
+  main { max-width: 520px; margin: 0 auto;
+         padding: calc(12px + env(safe-area-inset-top)) 16px calc(var(--nav-h) + 24px + env(safe-area-inset-bottom)); }
+  .screen { display:none; flex-direction:column; gap:12px; }
+  .screen.active { display:flex; }
+
+  section { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px; }
+  h2 { margin:0 0 12px; font-size:17px; }
+  h3 { margin:14px 0 6px; font-size:13px; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; }
+
+  /* font-size 16px — иначе iPhone приближает страницу при вводе */
+  input, select, button { font:inherit; font-size:16px; }
+  input, select { width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:#fff; color:var(--text); }
+  button { min-height:44px; border:none; border-radius:12px; cursor:pointer; }
+  .primary { width:100%; background:var(--accent); color:#fff; font-weight:600; font-size:17px; min-height:50px; }
+
+  label.field { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:6px 0; }
+  label.field input { width:120px; text-align:right; }
+  .item-row { display:grid; grid-template-columns: 1fr 110px 32px; gap:8px; align-items:center; margin:6px 0; }
+  .item-row input[type=number] { text-align:right; }
+  .add-item { background:none; color:var(--accent); font-weight:600; padding:0; min-height:36px; }
+
+  /* Главная цифра */
+  .hero { text-align:center; }
+  .hero .caption { color:var(--muted); font-size:14px; }
+  .hero .big { font-size:44px; font-weight:800; line-height:1.15; margin:4px 0; }
+  .hero .sub { color:var(--muted); font-size:14px; }
+  .good { color:var(--good); } .bad { color:var(--bad); }
+
+  /* Форма траты */
+  .amount { font-size:28px !important; font-weight:700; text-align:center; padding:12px !important; }
+  .chips { display:grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap:8px; margin:12px 0; }
+  .chip { background:var(--bg); color:var(--text); font-size:14px; padding:8px 6px; border:1px solid var(--line); }
+  .chip.on { background:var(--accent-soft); border-color:var(--accent); color:var(--accent); font-weight:600; }
+  .two { display:grid; grid-template-columns: 1fr 1.4fr; gap:8px; margin-bottom:12px; }
+
+  .row { display:flex; justify-content:space-between; gap:8px; padding:8px 0; border-bottom:1px solid var(--line); }
+  .row:last-child { border-bottom:none; }
+  .row .muted { color:var(--muted); font-size:13px; }
+  .bar { height:6px; background:var(--accent); border-radius:3px; margin:-2px 0 6px; }
+  .del { background:transparent; color:var(--muted); min-height:auto; padding:0 4px; font-size:18px; }
+
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { padding:8px 4px; border-bottom:1px solid var(--line); text-align:right; }
+  th { font-size:12px; color:var(--muted); font-weight:500; }
+  th:first-child, td:first-child { text-align:left; }
+  tr.today { background:var(--accent-soft); font-weight:600; }
+
+  /* Нижняя панель навигации */
+  nav { position:fixed; left:0; right:0; bottom:0; display:flex; justify-content:center;
+        background:var(--card); border-top:1px solid var(--line);
+        padding-bottom: env(safe-area-inset-bottom); }
+  nav button { flex:1; max-width:173px; height:var(--nav-h); background:none; color:var(--muted);
+               font-size:12px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; border-radius:0; }
+  nav button .ico { font-size:22px; }
+  nav button.on { color:var(--accent); font-weight:600; }
+
+  .toast { position:fixed; left:50%; bottom:calc(var(--nav-h) + 16px + env(safe-area-inset-bottom)); transform:translateX(-50%);
+           background:var(--text); color:#fff; padding:10px 16px; border-radius:20px; font-size:14px;
+           opacity:0; transition:opacity .2s; pointer-events:none; }
+  .toast.show { opacity:1; }
+</style>
+</head>
+<body>
+<main>
+  <!-- ===== Экран 1: Сегодня ===== -->
+  <div class="screen active" id="screen-today">
+    <section class="hero">
+      <div class="caption">Можно потратить сегодня</div>
+      <div class="big" id="todayLeft">—</div>
+      <div class="sub">Бюджет на день: <b id="daily"></b></div>
+    </section>
+
+    <section>
+      <form id="addForm">
+        <!-- inputmode="decimal" — на телефоне откроется цифровая клавиатура -->
+        <input class="amount" id="expAmount" type="text" inputmode="decimal" placeholder="0" autocomplete="off" required>
+        <div class="chips" id="chips"></div>
+        <div class="two">
+          <input type="date" id="expDate" required>
+          <input type="text" id="expNote" placeholder="Комментарий">
+        </div>
+        <button class="primary">Добавить трату</button>
+      </form>
+    </section>
+
+    <section>
+      <h2>Последние траты</h2>
+      <div id="expList"></div>
+    </section>
+
+    <section>
+      <h2>По категориям</h2>
+      <div id="byCat"></div>
+    </section>
+  </div>
+
+  <!-- ===== Экран 2: По дням ===== -->
+  <div class="screen" id="screen-days">
+    <section>
+      <h2>По дням</h2>
+      <table>
+        <thead><tr><th>Дата</th><th>Траты</th><th>Бюджет</th><th>Сальдо</th></tr></thead>
+        <tbody id="days"></tbody>
+      </table>
+    </section>
+  </div>
+
+  <!-- ===== Экран 3: План ===== -->
+  <div class="screen" id="screen-plan">
+    <section>
+      <h2>Итоги периода</h2>
+      <div class="row"><span>Свободные деньги</span><b id="free"></b></div>
+      <div class="row"><span>Потрачено</span><b id="spentTotal"></b></div>
+      <div class="row"><span>Накопления за месяц</span><b id="saveMonth"></b></div>
+      <div class="row"><span>Накопления за год</span><b id="saveYear"></b></div>
+    </section>
+    <section>
+      <h2>Период и план</h2>
+      <label class="field">С <input type="date" id="start" style="width:auto"></label>
+      <label class="field">По <input type="date" id="end" style="width:auto"></label>
+      <h3>Доходы</h3>
+      <div id="incomeList"></div>
+      <h3>Обязательные расходы</h3>
+      <div id="fixedList"></div>
+      <h3>Накопления</h3>
+      <label class="field">Откладываем, % <input type="number" inputmode="decimal" id="savePct"></label>
+    </section>
+  </div>
+</main>
+
+<!-- Нижняя навигация: data-screen — какой экран показать -->
+<nav>
+  <button class="on" data-screen="today"><span class="ico">💰</span>Сегодня</button>
+  <button data-screen="days"><span class="ico">📅</span>По дням</button>
+  <button data-screen="plan"><span class="ico">⚙️</span>План</button>
+</nav>
+<div class="toast" id="toast"></div>
+
+<script>
+// ============ ДАТЫ ============
+const toDate = (s) => new Date(s + 'T00:00:00');
+// Дата -> 'ГГГГ-ММ-ДД' по местному времени (toISOString сдвигал бы на UTC)
+const toStr  = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+// ============ ДАННЫЕ ============
+// Всё состояние приложения хранится в одном объекте.
+// Код лежит в открытом доступе, поэтому по умолчанию — только нули.
+// Свои суммы вводишь во вкладке «План», они хранятся только на устройстве.
+const CATEGORIES = ['Еда вне дома','Продукты','Работа','Транспорт','Подарки',
+                    'Здоровье','Одежда','Развлечения','Регулярные','Прочее'];
+
+// Период по умолчанию: с сегодня на месяц вперёд
+const _start = new Date(), _end = new Date();
+_end.setMonth(_end.getMonth() + 1);
+
+const DEFAULT_STATE = {
+  start: toStr(_start),
+  end:   toStr(_end),
+  income: [ { name:'Зарплата', amount:0 }, { name:'Доп. деньги', amount:0 } ],
+  fixed:  [ { name:'Аренда', amount:0 }, { name:'ЖКХ', amount:0 }, { name:'Транспорт', amount:0 } ],
+  savePct: 20,
+  expenses: [], // { date, category, amount, note }
+};
+
+// localStorage — хранилище браузера: данные переживут закрытие вкладки
+const KEY = 'my-budget-v1';
+let state = JSON.parse(localStorage.getItem(KEY)) || structuredClone(DEFAULT_STATE);
+function save() { localStorage.setItem(KEY, JSON.stringify(state)); }
+
+// ============ РАСЧЁТЫ ============
+// Здесь та же логика, что в формулах Excel.
+const DAY = 24 * 60 * 60 * 1000;
+const sum = (arr) => arr.reduce((s, x) => s + Number(x.amount || 0), 0);
+const money = (n) => n.toLocaleString('ru-RU', { maximumFractionDigits: 2 });
+
+function calc() {
+  const income  = sum(state.income);                      // B12
+  const savings = income * state.savePct / 100;           // D17
+  const fixed   = sum(state.fixed) + savings;             // E12
+  const free    = income - fixed;                         // D13
+  const days    = Math.max(1, Math.round((toDate(state.end) - toDate(state.start)) / DAY));
+  const daily   = free / days;                            // D15
+
+  // Таблица по дням: каждый день к бюджету добавляется daily, траты вычитаются
+  const rows = [];
+  let budget = 0, spentSoFar = 0;
+  for (let i = 0; i < days; i++) {
+    const d = toDate(state.start); d.setDate(d.getDate() + i);
+    const date  = toStr(d);
+    const spent = sum(state.expenses.filter(e => e.date === date));
+    budget += daily;
+    spentSoFar += spent;
+    rows.push({ date, spent, budget, saldo: budget - spentSoFar });
+  }
+  return { income, savings, free, daily, days, rows, spentTotal: sum(state.expenses) };
+}
+
+// ============ ОТРИСОВКА ============
+const $ = (id) => document.getElementById(id);
+
+// Редактируемый список «название — сумма» (для доходов и обязательных расходов):
+// можно переименовать статью, поменять сумму, удалить или добавить новую
+function renderList(containerId, list) {
+  const box = $(containerId);
+  box.innerHTML = '';
+  list.forEach((item, i) => {
+    const row = document.createElement('div');
+    row.className = 'item-row';
+
+    const name = document.createElement('input');
+    name.value = item.name; name.placeholder = 'Название';
+    name.oninput = () => { item.name = name.value; save(); };
+
+    const amount = document.createElement('input');
+    amount.type = 'number'; amount.inputMode = 'decimal'; amount.value = item.amount;
+    amount.oninput = () => { item.amount = Number(amount.value); save(); render(); };
+
+    const del = document.createElement('button');
+    del.type = 'button'; del.className = 'del'; del.textContent = '✕'; del.ariaLabel = 'Удалить';
+    del.onclick = () => {
+      if (!confirm(`Удалить «${item.name || 'без названия'}»?`)) return;
+      list.splice(i, 1); save(); renderList(containerId, list); render();
+    };
+
+    row.append(name, amount, del);
+    box.append(row);
+  });
+
+  const add = document.createElement('button');
+  add.type = 'button'; add.className = 'add-item'; add.textContent = '+ Добавить';
+  add.onclick = () => {
+    list.push({ name: '', amount: 0 }); save(); renderList(containerId, list);
+    box.querySelectorAll('.item-row input')[list.length * 2 - 2].focus();  // фокус на новое название
+  };
+  box.append(add);
+}
+
+function render() {
+  const r = calc();
+  const today = toStr(new Date());
+  const todayRow = r.rows.find(row => row.date === today) || r.rows.at(-1);
+
+  $('todayLeft').textContent = money(todayRow.saldo);
+  $('todayLeft').className = 'big ' + (todayRow.saldo >= 0 ? 'good' : 'bad');
+  $('daily').textContent      = money(r.daily);
+  $('free').textContent       = money(r.free);
+  $('spentTotal').textContent = money(r.spentTotal);
+  $('saveMonth').textContent  = money(r.savings);
+  $('saveYear').textContent   = money(r.savings * 12);
+
+  // По дням
+  $('days').innerHTML = r.rows.map(row => `
+    <tr class="${row.date === today ? 'today' : ''}">
+      <td>${toDate(row.date).toLocaleDateString('ru-RU', { day:'numeric', month:'short', weekday:'short' })}</td>
+      <td>${row.spent ? money(row.spent) : ''}</td>
+      <td>${money(row.budget)}</td>
+      <td class="${row.saldo >= 0 ? 'good' : 'bad'}">${money(row.saldo)}</td>
+    </tr>`).join('');
+
+  // По категориям
+  const totals = CATEGORIES.map(c => ({ c, s: sum(state.expenses.filter(e => e.category === c)) }))
+                           .filter(x => x.s > 0).sort((a, b) => b.s - a.s);
+  const max = totals[0]?.s || 1;
+  $('byCat').innerHTML = totals.map(x => `
+    <div class="row"><span>${x.c}</span><b>${money(x.s)}</b></div>
+    <div class="bar" style="width:${x.s / max * 100}%"></div>`).join('') || '<span class="muted">Пока пусто</span>';
+
+  // Последние траты (новые сверху, 15 штук)
+  $('expList').innerHTML = state.expenses
+    .map((e, i) => ({ ...e, i }))
+    .sort((a, b) => b.date.localeCompare(a.date) || b.i - a.i)
+    .slice(0, 15)
+    .map(e => `<div class="row">
+      <div><div>${e.category}</div>
+        <div class="muted">${e.date.slice(8)}.${e.date.slice(5, 7)}${e.note ? ' · ' + e.note : ''}</div></div>
+      <div style="display:flex;align-items:center;gap:6px"><b>${money(e.amount)}</b>
+        <button class="del" onclick="removeExpense(${e.i})" aria-label="Удалить">✕</button></div>
+    </div>`).join('') || '<span class="muted">Пока пусто</span>';
+}
+
+// ============ ДЕЙСТВИЯ ============
+let category = CATEGORIES[0];
+
+function renderChips() {
+  $('chips').innerHTML = CATEGORIES.map(c =>
+    `<button type="button" class="chip ${c === category ? 'on' : ''}" data-cat="${c}">${c}</button>`).join('');
+}
+$('chips').onclick = (ev) => {
+  const btn = ev.target.closest('[data-cat]');
+  if (btn) { category = btn.dataset.cat; renderChips(); }
+};
+
+function toast(text) {
+  $('toast').textContent = text; $('toast').classList.add('show');
+  clearTimeout(toast.t); toast.t = setTimeout(() => $('toast').classList.remove('show'), 1500);
+}
+
+function removeExpense(i) {
+  if (!confirm('Удалить трату?')) return;
+  state.expenses.splice(i, 1); save(); render();
+}
+
+$('addForm').onsubmit = (ev) => {
+  ev.preventDefault();  // не перезагружать страницу
+  const amount = Number($('expAmount').value.replace(',', '.'));  // на телефоне часто вводят запятую
+  if (!amount) return;
+  state.expenses.push({ date: $('expDate').value, category, amount, note: $('expNote').value.trim() });
+  $('expAmount').value = ''; $('expNote').value = '';
+  $('expAmount').blur();  // спрятать клавиатуру
+  save(); render(); toast(`Добавлено: ${money(amount)} — ${category}`);
+};
+
+// Переключение экранов нижней панелью
+document.querySelector('nav').onclick = (ev) => {
+  const btn = ev.target.closest('[data-screen]');
+  if (!btn) return;
+  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b === btn));
+  document.querySelectorAll('.screen').forEach(s => s.classList.toggle('active', s.id === 'screen-' + btn.dataset.screen));
+  window.scrollTo(0, 0);
+};
+
+for (const id of ['start', 'end', 'savePct']) {
+  $(id).value = state[id];
+  $(id).oninput = () => { state[id] = id === 'savePct' ? Number($(id).value) : $(id).value; save(); render(); };
+}
+
+$('expDate').value = toStr(new Date());
+renderChips();
+renderList('incomeList', state.income);
+renderList('fixedList', state.fixed);
+render();
+
+// Service worker — позволяет приложению открываться без интернета
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+</script>
+</body>
+</html>
